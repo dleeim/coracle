@@ -37,8 +37,7 @@ def download_data(symbol: str, timeframe: str, exchange_name: str, perp: bool, d
 
     # Convert to DataFrame
     df = pd.DataFrame(all_ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
-    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
-    
+
     # Ensure the data directory exists
     if not os.path.exists(data_dir):
         os.makedirs(data_dir)
@@ -55,4 +54,4 @@ def filename(symbol: str, exchange: str, perp: bool, timeframe: str, data_dir: s
     return join(data_dir, file)
 
 if __name__ == '__main__':
-    download_data('BTCUSDT', '1d', 'binance', perp=True, data_dir='./data')
+    download_data('BTCUSDT', '1d', 'binance', perp=False, data_dir='./data')

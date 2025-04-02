@@ -37,7 +37,7 @@ def download_data(symbol: str, timeframe: str, exchange_name: str, perp: bool, d
 
     # Convert to DataFrame
     df = pd.DataFrame(all_ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
-    # df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
     
     # Ensure the data directory exists
     if not os.path.exists(data_dir):

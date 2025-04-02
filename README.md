@@ -1,2 +1,2 @@
 # coracle
-Use CNN-LSTM with large dimensional feature to predict crypto assets in perpetual market
+Use CNN-LSTM and XGBoost with large dimensional feature to predict crypto assets in perpetual market

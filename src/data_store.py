@@ -7,7 +7,7 @@ import urllib.parse
 from dotenv import load_dotenv
 import argparse
 
-def download_data(symbol: str, timeframe: str, perp: bool, overwrite: bool):
+def download_data(symbol: str, timeframe: str, perp: bool):
     # Initialize the exchange based on perp flag
     if perp:
         exchange = ccxt.bybit({
@@ -55,7 +55,7 @@ def get_mysql_engine(user, password, host, port, database):
     url = f"mysql+pymysql://{user}:{pwd}@{host}:{port}/{database}"
     return create_engine(url, echo=False)
 
-def save_to_mysql(df: pd.DataFrame, table: str, overwrite: bool = False):
+def save_to_mysql(df: pd.DataFrame, table: str):
     """
     Append a DataFrame to a MySQL table.
     if_exists: 'fail', 'replace', or 'append'
@@ -68,16 +68,6 @@ def save_to_mysql(df: pd.DataFrame, table: str, overwrite: bool = False):
         port=os.getenv('MYSQL_PORT'),
         database=os.getenv('MYSQL_DATABASE'),
     )
-    
-    with engine.begin() as conn:
-        if overwrite:
-            # delete only the rows you’re about to re‑insert
-            tf = df['timeframe'].iloc[0]
-            sym= df['symbol'].iloc[0]
-            conn.execute(
-                text("DELETE FROM ohlcv WHERE symbol=:sym AND timeframe=:tf"),
-                {"sym": sym, "tf": tf}
-            )
 
     # write in chunks so you don’t overload memory or hit packet size limits
     df.to_sql(
@@ -88,7 +78,7 @@ def save_to_mysql(df: pd.DataFrame, table: str, overwrite: bool = False):
         chunksize=500,        # adjust per your needs
         method='multi',       # uses executemany()
     )
-    print(f"{'Overwrote' if overwrite else 'Appended'} {len(df)} rows to `{table}`")
+    print(f"{'Appended'} {len(df)} rows to `{table}`")
 
 if __name__ == '__main__':
     load_dotenv() 
@@ -97,7 +87,6 @@ if __name__ == '__main__':
     parser.add_argument('--symbol',   default='BTCUSDT', help='Trading pair symbol')
     parser.add_argument('--timeframes', nargs='+', default=['5m','1h','1d'], help='List of timeframes')
     parser.add_argument('--perp', action='store_true', help='Fetch perpetual futures data')
-    parser.add_argument('--overwrite', action='store_true', help='Delete existing rows for each timeframe before insert')
     args = parser.parse_args()
     
     for tf in args.timeframes:
@@ -105,5 +94,4 @@ if __name__ == '__main__':
             symbol=args.symbol,
             timeframe=tf,
             perp=args.perp,
-            overwrite=args.overwrite
         )

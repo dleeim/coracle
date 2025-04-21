@@ -1,0 +1,1 @@
+SELECT * FROM BTC_bybit_OHLCV.ohlcv;

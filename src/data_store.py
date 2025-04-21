@@ -2,18 +2,22 @@ import ccxt
 import pandas as pd
 from os.path import join
 import os
+from sqlalchemy import create_engine, text
+import urllib.parse
+from dotenv import load_dotenv
+import argparse
 
-def download_data(symbol: str, timeframe: str, exchange_name: str, perp: bool, data_dir: str):
+def download_data(symbol: str, timeframe: str, perp: bool, overwrite: bool):
     # Initialize the exchange based on perp flag
     if perp:
-        exchange = ccxt.binance({
+        exchange = ccxt.bybit({
             'enableRateLimit': True,  # Respect rate limits
             'options': {
                 'defaultType': 'future'  # Set to futures (perpetual contracts)
             }
         })
     else:
-        exchange = ccxt.binance({
+        exchange = ccxt.bybit({
             'enableRateLimit': True,  # Respect rate limits
         })
 
@@ -37,21 +41,69 @@ def download_data(symbol: str, timeframe: str, exchange_name: str, perp: bool, d
 
     # Convert to DataFrame
     df = pd.DataFrame(all_ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
-
-    # Ensure the data directory exists
-    if not os.path.exists(data_dir):
-        os.makedirs(data_dir)
-        print(f"Created directory: {data_dir}")
+    df['timeframe'] = [timeframe] * len(df)
+    df['symbol'] = [symbol] * len(df)
+    df['perp'] = [perp] * len(df)
+    df['datetime'] = pd.to_datetime(df['timestamp'], unit='ms')
 
     # Save to CSV
-    file_path = filename(symbol, exchange_name, perp, timeframe, data_dir)
-    df.to_csv(file_path, index=False)
-    print(f"Data saved to {file_path}")
+    save_to_mysql(df, table='ohlcv')
 
-def filename(symbol: str, exchange: str, perp: bool, timeframe: str, data_dir: str) -> str:
-    market = 'perp' if perp else 'spot'
-    file = f"{symbol}-{exchange}-{market}-{timeframe}.csv"
-    return join(data_dir, file)
+def get_mysql_engine(user, password, host, port, database):
+    # URL‑encode your password in case it has special chars
+    pwd = urllib.parse.quote_plus(password)
+    url = f"mysql+pymysql://{user}:{pwd}@{host}:{port}/{database}"
+    return create_engine(url, echo=False)
+
+def save_to_mysql(df: pd.DataFrame, table: str, overwrite: bool = False):
+    """
+    Append a DataFrame to a MySQL table.
+    if_exists: 'fail', 'replace', or 'append'
+    """
+    # you can also pull these from env vars or a config file
+    engine = get_mysql_engine(
+        user= os.getenv('MYSQL_USER'),
+        password=os.getenv('MYSQL_PASSWORD'),
+        host=os.getenv('MYSQL_HOST'),
+        port=os.getenv('MYSQL_PORT'),
+        database=os.getenv('MYSQL_DATABASE'),
+    )
+    
+    with engine.begin() as conn:
+        if overwrite:
+            # delete only the rows you’re about to re‑insert
+            tf = df['timeframe'].iloc[0]
+            sym= df['symbol'].iloc[0]
+            conn.execute(
+                text("DELETE FROM ohlcv WHERE symbol=:sym AND timeframe=:tf"),
+                {"sym": sym, "tf": tf}
+            )
+
+    # write in chunks so you don’t overload memory or hit packet size limits
+    df.to_sql(
+        name=table,
+        con=engine,
+        if_exists="append",
+        index=False,
+        chunksize=500,        # adjust per your needs
+        method='multi',       # uses executemany()
+    )
+    print(f"{'Overwrote' if overwrite else 'Appended'} {len(df)} rows to `{table}`")
 
 if __name__ == '__main__':
-    download_data('BTCUSDT', '1d', 'binance', perp=False, data_dir='./data')
+    load_dotenv() 
+
+    parser = argparse.ArgumentParser(description="Download OHLCV and load into MySQL.")
+    parser.add_argument('--symbol',   default='BTCUSDT', help='Trading pair symbol')
+    parser.add_argument('--timeframes', nargs='+', default=['5m','1h','1d'], help='List of timeframes')
+    parser.add_argument('--perp', action='store_true', help='Fetch perpetual futures data')
+    parser.add_argument('--overwrite', action='store_true', help='Delete existing rows for each timeframe before insert')
+    args = parser.parse_args()
+    
+    for tf in args.timeframes:
+        download_data(
+            symbol=args.symbol,
+            timeframe=tf,
+            perp=args.perp,
+            overwrite=args.overwrite
+        )

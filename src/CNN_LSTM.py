@@ -33,7 +33,6 @@ from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
-import pandas_ta as ta
 import requests
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix

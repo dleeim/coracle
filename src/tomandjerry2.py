@@ -8,8 +8,8 @@ from datetime import datetime, timedelta, timezone
 exchange = ccxt.bybit({'options': {'defaultType': 'future'}})
 symbol   = 'BTC/USDT:USDT'
 
-start_iso = '2022-01-01T00:00:00Z'
-end_iso   = '2022-05-02T00:00:00Z'
+start_iso = '2024-01-01T00:00:00Z'
+end_iso   = '2025-05-02T00:00:00Z'
 since     = exchange.parse8601(start_iso)
 end_ts    = exchange.parse8601(end_iso)
 all_bars  = []
@@ -35,19 +35,66 @@ df = df.loc[:end_iso]
 daily_close = df['close'].resample('24h').last()
 daily_ret   = daily_close.pct_change()
 
-# 3) Build 12h long/short signals
+# 3) Build 12h long/short signals and trading operation
+
+# parameters
 threshold = 0.002
+stop_loss  = 0.02    # 1% stop
+take_profit= 0.05    # 2% target
+leverage   = 5
+
+# new container for adjusted signals (will be +5, -5, or 0)
 signals = pd.Series(0, index=df.index)
+
+# we'll also track forced exit times to avoid double‐counting
+forced_exit = set()
+
 for ts, r in daily_ret.dropna().items():
     start = ts + pd.Timedelta(hours=1)
-    end   = ts + pd.Timedelta(hours=12)
-    if start in signals.index:
-        if r > threshold:
-            signals.loc[start:end] = 1
-        elif r < -threshold:
-            signals.loc[start:end] = -1
-        else:
-            signals.loc[start:end] = 0
+    if start not in df.index:
+        continue
+
+    # decide direction
+    if   r >  threshold: direction =  1
+    elif r < -threshold: direction = -1
+    else: continue
+
+    entry_price = df.at[start, 'open']  # or 'close', your choice
+    sl_price    = entry_price * (1 - direction*stop_loss)
+    tp_price    = entry_price * (1 + direction*take_profit)
+
+    # walk forward up to 12 hours
+    for t in df.loc[start : start+pd.Timedelta(hours=12)].index:
+        # skip if we've already force‐exited
+        if t in forced_exit:
+            break
+
+        hi = df.at[t, 'high']
+        lo = df.at[t, 'low']
+
+        # check TP/SL
+        if direction ==  1 and hi  >= tp_price:
+            exit_time = t
+            forced_exit.add(t)
+            break
+        if direction ==  1 and lo   <= sl_price:
+            exit_time = t
+            forced_exit.add(t)
+            break
+        if direction == -1 and lo   <= tp_price:
+            exit_time = t
+            forced_exit.add(t)
+            break
+        if direction == -1 and hi   >= sl_price:
+            exit_time = t
+            forced_exit.add(t)
+            break
+    else:
+        # no SL/TP hit → exit at 12h close
+        exit_time = start + pd.Timedelta(hours=12)
+
+    # now assign your signal between entry and exit
+    signals.loc[start:exit_time] = direction * leverage
 
 # 4) Hourly strategy returns before fees
 hr_ret    = df['close'].pct_change().fillna(0)

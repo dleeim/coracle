@@ -1,5 +1,6 @@
 # coracle
 Use XGBoost with large dimensional feature (technical analysis and on-chain data) to predict crypto assets in perpetual market
+Trading with XGBOOST: https://github.com/dleeim/coracle/blob/main/xgboost/EDA_1d.ipynb 
 
 Due list
 1. Create more features: 
